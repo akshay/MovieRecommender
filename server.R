@@ -36,24 +36,13 @@ movies$Year = as.numeric(unlist(
 small_image_url = "https://liangfgithub.github.io/MovieImages/"
 movies$image_url = sapply(movies$MovieID, 
                           function(x) paste0(small_image_url, x, '.jpg?raw=true'))
-genres = as.data.frame(movies$Genres, stringsAsFactors=FALSE)
-tmp = as.data.frame(tstrsplit(genres[,1], '[|]',
-                              type.convert=TRUE),
-                    stringsAsFactors=FALSE)
+
 genre_list = c("Action", "Adventure", "Animation", 
                "Children's", "Comedy", "Crime",
                "Documentary", "Drama", "Fantasy",
                "Film-Noir", "Horror", "Musical", 
                "Mystery", "Romance", "Sci-Fi", 
                "Thriller", "War", "Western")
-m = length(genre_list)
-genre_matrix = matrix(0, nrow(movies), length(genre_list))
-for(i in 1:nrow(tmp)){
-  genre_matrix[i,genre_list %in% tmp[i,]]=1
-}
-colnames(genre_matrix) = genre_list
-rownames(genre_matrix) = movies$MovieID
-remove("tmp", "genres")
 
 ratings = read.csv(paste0(myurl, 'ratings.dat?raw=true'), 
                    sep = ':',
@@ -65,10 +54,12 @@ ratingmat <- sparseMatrix(ratings$MovieID, ratings$UserID, x=ratings$Rating) # b
 ratingmat <- ratingmat[, unique(summary(ratingmat)$j)] # remove users with no ratings
 dimnames(ratingmat) <- list(MovieID = as.character(1:10000), UserID = as.character(sort(unique(ratings$user_id))))
 
-users = read.csv(paste0(myurl, 'users.dat?raw=true'),
-                 sep = ':', header = FALSE)
-users = users[, -c(2,4,6,8)] # skip columns
-colnames(users) = c('UserID', 'Gender', 'Age', 'Occupation', 'Zip-code')
+tmp = ratings %>% 
+  group_by(MovieID) %>% 
+  summarize(ratings_per_movie = n(), ave_ratings = mean(Rating)) %>%
+  inner_join(movies, by = 'MovieID') %>%
+  filter(ratings_per_movie > 2000) %>%
+  arrange(desc = ratings_per_movie)
 
 shinyServer(function(input, output, session) {
   
@@ -112,10 +103,10 @@ shinyServer(function(input, output, session) {
         res <- predict_cf(rmat, prediction_indices, "ubcf", TRUE, cal_cos, 20, FALSE, 2000, 1000)
         
         # sort, organize, and return the results
-        Rank = 1:10
+        Rank = 1:20
         user_results <- sort(res[, 1], decreasing = TRUE)[Rank]
         user_predicted_ids <- as.numeric(names(user_results))
-        recom_results <- data.table(Rank = Rank, 
+        recom_result <- data.table(Rank = Rank, 
                                     MovieID = movies$MovieID[user_predicted_ids], 
                                     Title = movies$Title[user_predicted_ids], 
                                     Predicted_rating =  user_results)
