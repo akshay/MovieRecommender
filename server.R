@@ -63,7 +63,7 @@ shinyServer(function(input, output, session) {
     chosen_genre = input$genre
     tmp_filtered = tmp %>% filter(grepl(chosen_genre, Genres, fixed = TRUE))
     num_movies <- min(c(5, length(tmp_filtered))) # movies per row
-    num_rows <- min(c(3, floor(length(tmp_filtered) / num_movies)))
+    num_rows <- min(c(4, floor(length(tmp_filtered) / num_movies)))
 
     lapply(1:num_rows, function(i) {
       list(fluidRow(lapply(1:num_movies, function(j) {
@@ -120,8 +120,7 @@ shinyServer(function(input, output, session) {
         user_predicted_ids <- as.numeric(names(user_results))
         recom_result <- data.table(Rank = Rank,
                                     MovieID = movies$MovieID[user_predicted_ids],
-                                    Title = movies$Title[user_predicted_ids],
-                                    Predicted_rating =  user_results)
+                                    Title = movies$Title[user_predicted_ids])
 
     }) # still busy
 
@@ -130,19 +129,20 @@ shinyServer(function(input, output, session) {
 
   # display the recommendations
   output$results <- renderUI({
-    num_rows <- 2
-    num_movies <- 5
     recom_result <- df()
+    num_movies <- min(c(5, nrow(recom_result))) # movies per row
+    num_rows <- min(c(4, floor(nrow(recom_result) / num_movies)))
 
     lapply(1:num_rows, function(i) {
       list(fluidRow(lapply(1:num_movies, function(j) {
+        idx = which(movies$MovieID == recom_result$MovieID[(i - 1) * num_movies + j])
         box(width = 2, status = "success", solidHeader = TRUE, title = paste0("Rank ", (i - 1) * num_movies + j),
 
           div(style = "text-align:center",
-              a(img(src = movies$image_url[recom_result$MovieID[(i - 1) * num_movies + j]], height = 150))
+              a(img(src = movies$image_url[idx], height = 150))
              ),
           div(style="text-align:center; font-size: 100%",
-              strong(movies$Title[recom_result$MovieID[(i - 1) * num_movies + j]])
+              strong(movies$Title[idx])
              )
 
         )
