@@ -8,6 +8,9 @@ output: html_document
 ```{r}
 library(recommenderlab)
 library(slam)
+library(data.table)
+library(reshape2)
+library(dplyr)
 set.seed(1904)
 myurl = "https://liangfgithub.github.io/MovieData/"
 ratings = read.csv(paste0(myurl, 'ratings.dat?raw=true'), 
@@ -26,10 +29,7 @@ movies$Year = as.numeric(unlist(
   lapply(movies$Title, function(x) substr(x, nchar(x)-4, nchar(x)-1))))
 small_image_url = "https://liangfgithub.github.io/MovieImages/"
 movies$image_url = sapply(movies$MovieID, 
-                          function(x) paste0(small_image_url, x, '.jpg?raw=true'))genres = as.data.frame(movies$Genres, stringsAsFactors=FALSE)
-tmp = as.data.frame(tstrsplit(genres[,1], '[|]',
-                              type.convert=TRUE),
-                    stringsAsFactors=FALSE)
+                          function(x) paste0(small_image_url, x, '.jpg?raw=true'))
 ```
 
 # System I
@@ -39,7 +39,9 @@ tmp = as.data.frame(tstrsplit(genres[,1], '[|]',
 In the first scheme, we define most popular as "number of ratings".
 We filter to movies in the user's preferred genre (say, Action) then count number of ratings.
 ```{r}
-movies_filtered = movies["Action" %in% tmp,]
+genres = as.data.frame(movies$Genres, stringsAsFactors=FALSE)
+tmp = tstrsplit(genres[,1], '[|]')[[1]]
+movies_filtered = movies["Action" == tmp,]
 ratings_filtered = ratings %>% 
   group_by(MovieID) %>% 
   summarize(ratings_per_movie = n(), ave_ratings = mean(Rating)) %>%
@@ -47,7 +49,7 @@ ratings_filtered = ratings %>%
   filter(ratings_per_movie > 2000)
 
 ratings_filtered %>%
-  arrange(desc = ratings_per_movie) %>%
+  arrange(desc = -ratings_per_movie) %>%
   print(n = 5)
 ```
 
@@ -59,7 +61,7 @@ We filter to movies in the user's preferred genre, and only show movies with at 
 ```{r}
 ratings_filtered %>%
   top_n(10, ave_ratings) %>%
-  arrange(desc(-ave_ratings)) %>%
+  arrange(desc(ave_ratings)) %>%
   print(n = 5)
 ```
 
@@ -135,12 +137,12 @@ max(abs(p.UBCF - mypred), na.rm = TRUE)
 ### Generate Prediction
 ```{r}
 names(tests) = colnames(trains)
-S = proxy::simil(t(trains), method = "cosine")
+S = proxy::simil(t(trains), method = "cosine", drop0 = TRUE, use_nan = TRUE)
+S = (1 + as.matrix(S, diag = 0)) / 2
 mypred = rep(NA, nrow(S))
 for (i in 1:nrow(S)) {
   S_i = S[i,]
-  S_i[i] = 0
-  S_filtered = S_i[S_i != 0 & !is.na(S_i)]
+  S_filtered = S_i[!is.na(S_i)]
   top_S = S_filtered[tail(order(S_filtered, decreasing = FALSE), 30), drop = FALSE]
   top_S = top_S[!is.na(top_S)]
   tests_filtered = tests[names(top_S)]
