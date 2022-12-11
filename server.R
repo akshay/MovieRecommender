@@ -23,8 +23,6 @@ get_user_ratings <- function(value_list) {
   return (user_ratings)
 }
 
-
-myurl = "https://liangfgithub.github.io/MovieData/"
 movies = readLines(paste0('movies.dat'))
 movies = strsplit(movies, split = "::", fixed = TRUE, useBytes = TRUE)
 movies = matrix(unlist(movies), ncol = 3, byrow = TRUE)
@@ -32,8 +30,6 @@ movies = data.frame(movies, stringsAsFactors = FALSE)
 colnames(movies) = c('MovieID', 'Title', 'Genres')
 movies$MovieID = as.integer(movies$MovieID)
 movies$Title = iconv(movies$Title, "latin1", "UTF-8")
-movies$Year = as.numeric(unlist(
-  lapply(movies$Title, function(x) substr(x, nchar(x)-4, nchar(x)-1))))
 small_image_url = "https://liangfgithub.github.io/MovieImages/"
 movies$image_url = sapply(movies$MovieID,
                           function(x) paste0(small_image_url, x, '.jpg?raw=true'))
@@ -45,9 +41,9 @@ ratings = read.csv(paste0('ratings.dat'),
                    header = FALSE)
 colnames(ratings) = c('UserID', 'MovieID', 'Rating', 'Timestamp')
 ratings$Timestamp = NULL
-ratingmat <- sparseMatrix(ratings$MovieID, ratings$UserID, x=ratings$Rating) # book x user matrix
-ratingmat <- ratingmat[unique(summary(ratingmat)$i), unique(summary(ratingmat)$j)] # remove users with no ratings
-dimnames(ratingmat) <- list(MovieID = as.character(sort(unique(ratings$MovieID))), UserID = as.character(sort(unique(ratings$UserID))))
+ratingmat <- sparseMatrix(ratings$MovieID, ratings$UserID, x=ratings$Rating)
+dimnames(ratingmat) = list(MovieID = as.character(1:max(ratings$MovieID)), UserID = as.character(1:max(ratings$UserID)))
+all_indexes = which(1:nrow(ratingmat) %in% movies$MovieID)
 
 tmp = ratings %>%
   group_by(MovieID) %>%
@@ -102,25 +98,29 @@ shinyServer(function(input, output, session) {
         # get the user's rating data
         value_list <- reactiveValuesToList(input)
         user_ratings <- get_user_ratings(value_list)
-
-        # add user's ratings as first column to rating matrix
-        rmat <- cbind(user_ratings, ratingmat)
-
-        # get the indices of which cells in the matrix should be predicted
-        # predict all books the current user has not yet rated
-        items_to_predict <- which(rmat[, 1] == 0)
-        prediction_indices <- as.matrix(expand.grid(items_to_predict, 1))
-
-        # run the ubcf-alogrithm
-        res <- predict_cf(rmat, prediction_indices, "ubcf", TRUE, cal_cos, 20, FALSE, 2000, 1000)
-
-        # sort, organize, and return the results
         Rank = 1:20
-        user_results <- sort(res[, 1], decreasing = TRUE)[Rank]
-        user_predicted_ids <- as.numeric(names(user_results))
+
+        if (sum(user_ratings) == 0) {
+          user_predicted_ids = tmp$MovieID[Rank]
+        } else {
+          # add user's ratings as first column to rating matrix
+          rmat <- cbind(user_ratings, ratingmat)
+
+          # get the indices of which cells in the matrix should be predicted
+          # predict all books the current user has not yet rated
+          items_to_predict <- which(user_ratings[all_indexes] == 0)
+          prediction_indices <- as.matrix(expand.grid(items_to_predict, 1))
+
+          # run the ubcf-alogrithm
+          res <- predict_cf(rmat, prediction_indices, "ubcf", TRUE, cal_cos, 20, FALSE, 2000, 1000)
+
+          # sort, organize, and return the results
+          user_results <- sort(res[, 1], decreasing = TRUE)[1:(length(Rank)*2)]
+          user_predicted_ids <- unique(as.numeric(names(user_results)))
+        }
+        user_predicted_ids = user_predicted_ids[which(user_predicted_ids %in% movies$MovieID)]
         recom_result <- data.table(Rank = Rank,
-                                    MovieID = movies$MovieID[user_predicted_ids],
-                                    Title = movies$Title[user_predicted_ids])
+                                   MovieID = user_predicted_ids[Rank])
 
     }) # still busy
 
